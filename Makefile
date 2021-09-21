@@ -12,7 +12,7 @@ MPIFFT_FILE =
 
 # General compiler specifications
 
-CXX := mpicxx
+CXX := icc
 CPPFLAGS := 
 CXXFLAGS := -O3 -std=c++11 -ipo -xhost -inline-forceinline -qopenmp-simd -qopt-prefetch=4 -diag-disable 3180
 LDFLAGS := 

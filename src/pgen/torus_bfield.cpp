@@ -649,7 +649,37 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
 
         disk_rotate(x,y,z,&xr,&yr,&zr);
         disk_rotate(vx,vy,vz,&vxr,&vyr,&vzr);
-        disk_get_index(xr,yr,zr,&ir,&jr,&kr);
+        //disk_get_index(xr,yr,zr,&ir,&jr,&kr);
+        printf("Old and new coordinates: (%f,%f,%f), (%f,%f,%f)",x,y,z,xr,yr,zr);
+
+        /* Iterate through x */
+        for (int tmp=is+1; tmp<ie-1; tmp++){
+          if  ( (abs(x - pcoord->x1v(tmp)) < abs(x - pcoord->x1v(tmp-1))) &&
+              (abs(x - pcoord->x1v(tmp)) < abs(x - pcoord->x1v(tmp+1)))){
+                printf("Index found for x \n");
+                ir = tmp;
+                break;
+          }
+        }
+        /* Iterate through y */
+        for (int tmp=js+1; tmp<je-1; tmp++){
+          if  ( (abs(y - pcoord->x2v(tmp)) < abs(y - pcoord->x2v(tmp-1))) &&
+              (abs(y - pcoord->x2v(tmp)) < abs(y - pcoord->x2v(tmp+1)))){
+                printf("Index found for y \n");
+                jr = tmp;
+                break;
+          }
+        }
+          /* Iterate through z */
+        for (int tmp=ks+1; tmp<ke-1; tmp++){
+          if  ( (abs(z - pcoord->x3v(tmp)) < abs(z - pcoord->x3v(tmp-1))) &&
+              (abs(z - pcoord->x3v(tmp)) < abs(z - pcoord->x3v(tmp+1)))){
+                printf("Index found for z \n");
+                kr = tmp;
+                break;
+          }
+        }
+        // printf("Old indices (%d, %d, %d), New indices (%d, %d, %d) \n", i, j, k, ir, jr, kr);
 
         // Now replace with rotated values
         Rho_Disk(kr,jr,ir) = torus_rho;
