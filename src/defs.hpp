@@ -61,7 +61,7 @@
 #define SINGLE_PRECISION_ENABLED 0
 
 // MPI parallelization (MPI_PARALLEL or NOT_MPI_PARALLEL)
-#define NOT_MPI_PARALLEL
+#define MPI_PARALLEL
 
 // openMP parallelization (OPENMP_PARALLEL or NOT_OPENMP_PARALLEL)
 #define NOT_OPENMP_PARALLEL
@@ -74,7 +74,7 @@
 
 // compiler options
 #define COMPILED_WITH "icc"
-#define COMPILER_COMMAND "icc"
+#define COMPILER_COMMAND "mpicxx"
 #define COMPILED_WITH_OPTIONS " -O3 -std=c++11 -ipo -xhost -inline-forceinline -qopenmp-simd -qopt-prefetch=4 -diag-disable 3180   -lhdf5"
 
 //----------------------------------------------------------------------------------------

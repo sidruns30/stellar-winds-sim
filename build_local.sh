@@ -9,10 +9,10 @@ module load hdf5/intel-18.0.2/impi-18.0.2/1.10.1
 
 prob=torus_bfield #star_cluster_sean #test_torus #gravity_test #blank_disk   #test_torus  #star_cluster_sean
 
-python ./configure.py --prob=$prob --flux=hlle --cxx=icc #-hdf5 #-mpi
+python ./configure.py --prob=$prob --flux=hlle --cxx=icc -hdf5 -mpi
 
 make clean
-make #-j #2> error.txt
+make -j #2> error.txt
 
 #tasks=4
 ./bin/athena -i athinput.star_cluster -m 1  

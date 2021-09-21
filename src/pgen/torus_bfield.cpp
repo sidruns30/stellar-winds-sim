@@ -609,9 +609,9 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
 
   // Arrays to store the data of the rotated disk
   AthenaArray<Real> Rho_Disk, Press_Disk, Velx_Disk, Vely_Disk, Velz_Disk;
-  nx1 = ie - is;
-  nx2 = je - js;
-  nx3 = ke - ks;
+  nx1 = ie - is + 2*NGHOST;
+  nx2 = je - js + 2*NGHOST;
+  nx3 = ke - ks + 2*NGHOST;
   Rho_Disk.NewAthenaArray(nx3,nx2,nx1);
   Press_Disk.NewAthenaArray(nx3,nx2,nx1);
   Velx_Disk.NewAthenaArray(nx3,nx2,nx1);
@@ -641,52 +641,12 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
            torus_v = 0;
         }
 
-        /*******Disk rotation stuff **************/
-        double xr=0, yr=0, zr=0;    // rotated positions
-        double vxr=0, vyr=0, vzr=0; // rotated velocities
-        int ir=0, jr=0, kr=0;       // indices of rotated coords
-        double vx = - torus_v * std::sin(phi), vy = torus_v * std::cos(phi), vz = 0;  // current velocities
-
-        disk_rotate(x,y,z,&xr,&yr,&zr);
-        disk_rotate(vx,vy,vz,&vxr,&vyr,&vzr);
-        //disk_get_index(xr,yr,zr,&ir,&jr,&kr);
-        printf("Old and new coordinates: (%f,%f,%f), (%f,%f,%f)",x,y,z,xr,yr,zr);
-
-        /* Iterate through x */
-        for (int tmp=is+1; tmp<ie-1; tmp++){
-          if  ( (abs(x - pcoord->x1v(tmp)) < abs(x - pcoord->x1v(tmp-1))) &&
-              (abs(x - pcoord->x1v(tmp)) < abs(x - pcoord->x1v(tmp+1)))){
-                printf("Index found for x \n");
-                ir = tmp;
-                break;
-          }
-        }
-        /* Iterate through y */
-        for (int tmp=js+1; tmp<je-1; tmp++){
-          if  ( (abs(y - pcoord->x2v(tmp)) < abs(y - pcoord->x2v(tmp-1))) &&
-              (abs(y - pcoord->x2v(tmp)) < abs(y - pcoord->x2v(tmp+1)))){
-                printf("Index found for y \n");
-                jr = tmp;
-                break;
-          }
-        }
-          /* Iterate through z */
-        for (int tmp=ks+1; tmp<ke-1; tmp++){
-          if  ( (abs(z - pcoord->x3v(tmp)) < abs(z - pcoord->x3v(tmp-1))) &&
-              (abs(z - pcoord->x3v(tmp)) < abs(z - pcoord->x3v(tmp+1)))){
-                printf("Index found for z \n");
-                kr = tmp;
-                break;
-          }
-        }
-        // printf("Old indices (%d, %d, %d), New indices (%d, %d, %d) \n", i, j, k, ir, jr, kr);
-
-        // Now replace with rotated values
-        Rho_Disk(kr,jr,ir) = torus_rho;
-        Press_Disk(kr,jr,ir) = press;
-        Velx_Disk(kr,jr,ir) = vxr;
-        Vely_Disk(kr,jr,ir) = vyr;
-        Velz_Disk(kr,jr,ir) = vzr;
+        /*******Copy hydro variables into the other arrays **************/
+        Rho_Disk(k,j,i) = torus_rho;
+        Press_Disk(k,j,i) = press;
+        Velx_Disk(k,j,i) = - torus_v * std::sin(phi);
+        Vely_Disk(k,j,i) =  torus_v * std::cos(phi);
+        Velz_Disk(k,j,i) = 0;
 
         /********Vector potential***********************/
 
@@ -793,25 +753,65 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
   Ay.DeleteAthenaArray();
   Az.DeleteAthenaArray();
 
+  /**********ROTATION STUFF*********************/
   // Replace old hydro variables with rotated ones
   for (k=ks; k<=ke+1; k++){
     for (j=js; j<=je+1; j++){
       for (i=is; i<=ie+1; i++){
-        int ir = i-NGHOST;
-        int jr = j-NGHOST;
-        int kr = k-NGHOST;
-        get_cartesian_coords(pcoord->x1v(i), pcoord->x2v(j), pcoord->x3v(k), &x, &y, &z);
-        double r = std::sqrt(SQR(x) + SQR(y) + SQR(z));
-        // Only rotate coordinates outside 0.5 pc
-        if (r >= 0.5){
-          phydro->u(IDN,k,j,i) = Rho_Disk(kr,jr,ir);
-          phydro->u(IM1,k,j,i) = Rho_Disk(kr,jr,ir)*Velx_Disk(kr,jr,ir);
-          phydro->u(IM2,k,j,i) = Rho_Disk(kr,jr,ir)*Vely_Disk(kr,jr,ir);
-          phydro->u(IM3,k,j,i) = Rho_Disk(kr,jr,ir)*Velz_Disk(kr,jr,ir);;
-          phydro->u(IEN,k,j,i) = (0.5 * Rho_Disk(kr,jr,ir)) * std::sqrt(
-                                 SQR(Velx_Disk(kr,jr,ir)) + SQR(Vely_Disk(kr,jr,ir)) + SQR(Velz_Disk(kr,jr,ir))) 
-                                 + Press_Disk(kr,jr,ir)/gm1;
+        double xr=0, yr=0, zr=0;    // rotated positions
+        double vxr=0, vyr=0, vzr=0; // rotated velocities
+        int ir=0, jr=0, kr=0;       // indices of rotated coords
+        // Get the indices of the xr,yr,zr coordinates for the disk
+        // Not doing it for the whole sim domain because some points fall out of the boundary
+        // after rotation
+        
+        double rho = phydro->u(IDN,k,j,i);
+        double vx = phydro->u(IM1,k,j,i)/phydro->u(IDN,k,j,i);
+        double vy = phydro->u(IM2,k,j,i)/phydro->u(IDN,k,j,i);
+        double vz = phydro->u(IM3,k,j,i)/phydro->u(IDN,k,j,i);
+        double press = (gas_gamma - 1)*(phydro->u(IEN,k,j,i) - 0.5*rho*(SQR(vx) + SQR(vy) + SQR(vz)));
+
+        if (R > 0.5 && R < 3 && abs(z) < 0.5 ){
+          disk_rotate(x,y,z,&xr,&yr,&zr);
+          disk_rotate(vx,vy,vz,&vxr,&vyr,&vzr);
+          // X
+          for (int tmp=is;tmp<=ie;tmp++){
+            if (xr < pcoord->x1v(tmp)) {break;}
+            ir = tmp;
+          }
+          // Y
+          for (int tmp=js;tmp<=je;tmp++){
+            if (yr < pcoord->x2v(tmp)) {break;}
+            jr = tmp;
+          }
+          // Z
+          for (int tmp=ks;tmp<=ke;tmp++){
+            if (zr < pcoord->x3v(tmp)) {break;}
+            kr = tmp;
+          }
+          
+        // Now replace with rotated values
+        Rho_Disk(kr,jr,ir) = rho;
+        Press_Disk(kr,jr,ir) = press;
+        Velx_Disk(kr,jr,ir) = vxr;
+        Vely_Disk(kr,jr,ir) = vyr;
+        Velz_Disk(kr,jr,ir) = vzr;
         }
+      }
+    }
+  }
+  // Finally copy values into the hydro arrays
+  for (k=ks; k<=ke+1; k++){
+    for (j=js; j<=je+1; j++){
+      for (i=is; i<=ie+1; i++){
+
+          phydro->u(IDN,k,j,i) = Rho_Disk(k,j,i);
+          phydro->u(IM1,k,j,i) = Rho_Disk(k,j,i)*Velx_Disk(k,j,i);
+          phydro->u(IM2,k,j,i) = Rho_Disk(k,j,i)*Vely_Disk(k,j,i);
+          phydro->u(IM3,k,j,i) = Rho_Disk(k,j,i)*Velz_Disk(k,j,i);;
+          phydro->u(IEN,k,j,i) = (0.5 * Rho_Disk(k,j,i)) * std::sqrt(
+                                 SQR(Velx_Disk(k,j,i)) + SQR(Vely_Disk(k,j,i)) + SQR(Velz_Disk(k,j,i))) 
+                                 + Press_Disk(k,j,i)/(gas_gamma - 1);
 
       }
     }
