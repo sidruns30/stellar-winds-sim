@@ -1,0 +1,49 @@
+#!/bin/bash
+# Job name
+#SBATCH --job-name=convert_dumps
+#
+# Partition:
+#SBATCH --partition=normal
+#
+# Account:
+##SBATCH --account=co_astro
+# QoS:
+##SBATCH --qos=savio_lowprio #condo_astro #br_astro #rc_astro?
+##SBATCH --requeue
+#
+# Processors:
+#SBATCH -N 1
+#SBATCH --tasks-per-node=5
+# Wall clock limit:
+#SBATCH --time=8:00:00
+#
+# Mail type:
+#SBATCH --mail-type=all
+#
+# Mail user:
+#SBATCH --mail-user=smressle@ucsb.edu
+#
+
+#type of analysis
+export mtype=mk_1d_cartesian
+#the index of the current job in the array ("job step")
+export inode=$((0))
+#the number of jobs in the array, 
+export ntot=$((10))
+#number of tasks per node
+export taskspernode=$SLURM_NTASKS_PER_NODE
+
+#make backup
+module load phdf5
+module load gcc
+
+## Run command
+#echo $LD_LIBRARY_PATH
+for ((i=0; i < taskspernode ; i++))
+do
+    export iglob=$(( (inode * taskspernode) + i ))
+    python mk_frame.py --mtype=${mtype} --i_glob=${iglob} --n_processors=${ntot} --th=0 --phi=0 --a=0.9375 --gam=1.666667 --i_start=0 --i_end=840  & 
+done
+wait
+
+
