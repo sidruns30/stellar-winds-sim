@@ -66,6 +66,7 @@ Real gas_gamma;
 Real kb = 1.38e-16*erg_to_code;    // per Kelvin
 Real kb_cgs = 1.38e-16;
 Real mh2 = 3.32e-24*g_to_msun;
+Real kb_over_mh2 = 4.3477e-9;
 Real Tfloor = 3.e2;
 Real GM;
 // Torus parameters (calculared using Python)
@@ -74,7 +75,7 @@ Real R_k = 1.9;
 Real q = 1.56; 
 Real T_tar;
 Real n_tar; //target number density in 1/cm3
-Real rho_tar = n_tar*icm3_to_code*mh2;
+Real rho_tar;
 // More parameters
 Real C, K, P_amb, A; 
 // Inner boundary
@@ -84,7 +85,8 @@ double SMALL = 1e-20;
 bool amr_increase_resolution;
 LogicalLocation *loc_list;
 int max_refinement_level = 0; 
-
+// Disk rotate conditional
+bool ROTATE = true;
 // Cooling source function
 void Cooling_source(MeshBlock *pmb, const Real time, const Real dt,
   const AthenaArray<Real> &prim, const AthenaArray<Real> &bcc, AthenaArray<Real> &cons);
@@ -126,13 +128,27 @@ void Mesh::InitUserMeshData(ParameterInput *pin){
   gas_gamma = pin->GetReal("hydro", "gamma");
   T_tar = pin->GetReal("problem","tar_T");
   n_tar = pin->GetReal("problem", "tar_n");
+  rho_tar = n_tar*icm3_to_code*mh2;
+  //printf("Target temperature and density are: %f, %f, \n ", T_tar, n_tar);
+  //printf("GM, q, R_k are: %f, %f, %f \n", GM, q, R_k);
+  //printf("kb, mh2, gas_gamma are: %lf, %lf, %f \n", kb, mh2, gas_gamma);
+  //printf("kb over mh2 is: %f \n", kb_over_mh2);
+  //printf("ergs to code is %lf \n", erg_to_code);
+  //std::cout<<"GM, kb, mh2, kb_over_mh2: "<<GM<<"\t"<<kb<<"\t"<<mh2<<"\t"<<kb_over_mh2<<"\n";
   //EnrollUserExplicitSourceFunction(gravity);
-  EnrollUserExplicitSourceFunction(Cooling_source);
-  EnrollUserRadSourceFunction(integrate_cool);
   C = std::sqrt(GM) * std::pow(R_k, q-1.5);
-  K = (rho_tar * kb * T_tar) / (mh2 * std::pow(rho_tar, gas_gamma));
+  K = kb_over_mh2 * (rho_tar * T_tar) / (std::pow(rho_tar, gas_gamma));
   P_amb = pfloor;
   A = integration_cons();
+  //std::cout<<"ntar"<<n_tar<<"\n";
+  //std::cout<<"kb, rho_tar, T_tar, gas_gamma, P_amb"<< kb<<"\t" << rho_tar<<"\t" <<
+  //           T_tar<< "\t" << gas_gamma<<"\t" << P_amb<<"\n";
+  //double t1 = kb* (rho_tar * T_tar);
+  //double t2 = std::pow(rho_tar, gas_gamma);
+  //std::cout<< "t1 and t2 are: "<< t1 << "\t" << t2 << "\n";
+  //printf("Values of C, K, P_amb and A are: %f, %f, %f, %f \n", C, K, P_amb, A);
+  EnrollUserExplicitSourceFunction(Cooling_source);
+  EnrollUserRadSourceFunction(integrate_cool);
 }
 
 /* Functions to calculate the disk pressure */ 
@@ -150,6 +166,7 @@ Real disk_press(Real r_vec[3]){
   }
 
   Real P = std::pow(factor * terms, gas_gamma / (gas_gamma-1));
+  // if (isnan(P)) {printf("Pressure is nan \n");}
   return std::max(P, P_amb);
 }
 /* Root finding functions
@@ -287,7 +304,7 @@ void Cooling_source(MeshBlock *pmb, const Real time, const Real dt,
     for (int j=js;j<=je;j++){
       for (int k=ks;k<=ke;k++){
         // Obtain the final temperature from the cooling function
-        prob::current_T = prim(IPR,k,j,i)/prim(IDN,k,j,i) * (mh2/kb);
+        prob::current_T = prim(IPR,k,j,i)/prim(IDN,k,j,i) * (1 / kb_over_mh2);//(mh2/kb);
         prob::current_n = prim(IDN,k,j,i)/rho_to_n;
         Tup = prob::current_T;
         Tlow = Tfloor;
@@ -307,42 +324,6 @@ void Cooling_source(MeshBlock *pmb, const Real time, const Real dt,
           cons(IEN,k,j,i) = thermal + kinetic + magnetic;
         }
       }
-    }
-  }
-}
-
-/* Functions for disk orientation*/
-// Find the index of the cell with coordinate x,y,z
-// Try setting the input parameter as an Athena array
-void disk_get_index(double x, double y, double z, int *i, int *j, int *k){
-  MeshBlock *pmb;
-  double is = pmb->is, ie = pmb->ie;
-  double js = pmb->js, je = pmb->je;
-  double ks = pmb->ks, ke = pmb->ke;
-  Coordinates *pcoord = pmb->pcoord;
-  
-  /* Iterate through x */
-  for (int tmp=is+1; tmp<ie-1; tmp++){
-    if  (abs(x - pcoord->x1v(tmp)) < abs(x - pcoord->x1v(tmp-1)) &&
-         abs(x - pcoord->x1v(tmp)) < abs(x - pcoord->x1v(tmp+1))){
-          *i = tmp;
-          break;
-    }
-  }
-  /* Iterate through y */
-  for (int tmp=js+1; tmp<je-1; tmp++){
-    if  (abs(y - pcoord->x2v(tmp)) < abs(y - pcoord->x2v(tmp-1)) &&
-         abs(y - pcoord->x2v(tmp)) < abs(y - pcoord->x2v(tmp+1))){
-          *j = tmp;
-          break;
-    }
-  }
-    /* Iterate through z */
-  for (int tmp=ks+1; tmp<ke-1; tmp++){
-    if  (abs(z - pcoord->x3v(tmp)) < abs(z - pcoord->x3v(tmp-1)) &&
-         abs(z - pcoord->x3v(tmp)) < abs(z - pcoord->x3v(tmp+1))){
-          *k = tmp;
-          break;
     }
   }
 }
@@ -559,6 +540,7 @@ void apply_inner_boundary_condition(MeshBlock *pmb,AthenaArray<Real> &prim){
     }
   }
 }
+
 void MeshBlock::InitUserMeshBlockData(ParameterInput *pin){
   n_mb = pmy_mesh->nbtotal;
   loc_list = pmy_mesh->loclist;
@@ -640,7 +622,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
            torus_rho = rhofloor;
            torus_v = 0;
         }
-
+        // if (i == 100 && j == 100){printf("Disk pressure at z = %f is: %f \n", z,press);}
         /*******Copy hydro variables into the other arrays **************/
         Rho_Disk(k,j,i) = torus_rho;
         Press_Disk(k,j,i) = press;
@@ -716,6 +698,8 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
       }
     }
   }
+  // ijk for loop ends
+
   Real bmag = 1.e-3/UnitB, bnorm = 1.e5; 
   
   if (MAGNETIC_FIELDS_ENABLED){
@@ -755,68 +739,70 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin)
 
   /**********ROTATION STUFF*********************/
   // Replace old hydro variables with rotated ones
-  for (k=ks; k<=ke+1; k++){
-    for (j=js; j<=je+1; j++){
-      for (i=is; i<=ie+1; i++){
-        double xr=0, yr=0, zr=0;    // rotated positions
-        double vxr=0, vyr=0, vzr=0; // rotated velocities
-        int ir=0, jr=0, kr=0;       // indices of rotated coords
-        // Get the indices of the xr,yr,zr coordinates for the disk
-        // Not doing it for the whole sim domain because some points fall out of the boundary
-        // after rotation
-        
-        double rho = phydro->u(IDN,k,j,i);
-        double vx = phydro->u(IM1,k,j,i)/phydro->u(IDN,k,j,i);
-        double vy = phydro->u(IM2,k,j,i)/phydro->u(IDN,k,j,i);
-        double vz = phydro->u(IM3,k,j,i)/phydro->u(IDN,k,j,i);
-        double press = (gas_gamma - 1)*(phydro->u(IEN,k,j,i) - 0.5*rho*(SQR(vx) + SQR(vy) + SQR(vz)));
-
-        if (R > 0.5 && R < 3 && abs(z) < 0.5 ){
-          disk_rotate(x,y,z,&xr,&yr,&zr);
-          disk_rotate(vx,vy,vz,&vxr,&vyr,&vzr);
-          // X
-          for (int tmp=is;tmp<=ie;tmp++){
-            if (xr < pcoord->x1v(tmp)) {break;}
-            ir = tmp;
-          }
-          // Y
-          for (int tmp=js;tmp<=je;tmp++){
-            if (yr < pcoord->x2v(tmp)) {break;}
-            jr = tmp;
-          }
-          // Z
-          for (int tmp=ks;tmp<=ke;tmp++){
-            if (zr < pcoord->x3v(tmp)) {break;}
-            kr = tmp;
-          }
+  if (ROTATE){
+    for (k=ks; k<=ke+1; k++){
+      for (j=js; j<=je+1; j++){
+        for (i=is; i<=ie+1; i++){
+          double xr=0, yr=0, zr=0;    // rotated positions
+          double vxr=0, vyr=0, vzr=0; // rotated velocities
+          int ir=0, jr=0, kr=0;       // indices of rotated coords
+          // Get the indices of the xr,yr,zr coordinates for the disk
           
-        // Now replace with rotated values
-        Rho_Disk(kr,jr,ir) = rho;
-        Press_Disk(kr,jr,ir) = press;
-        Velx_Disk(kr,jr,ir) = vxr;
-        Vely_Disk(kr,jr,ir) = vyr;
-        Velz_Disk(kr,jr,ir) = vzr;
+          double rho = phydro->u(IDN,k,j,i);
+          double vx = phydro->u(IM1,k,j,i)/phydro->u(IDN,k,j,i);
+          double vy = phydro->u(IM2,k,j,i)/phydro->u(IDN,k,j,i);
+          double vz = phydro->u(IM3,k,j,i)/phydro->u(IDN,k,j,i);
+          double press = (gas_gamma - 1)*(phydro->u(IEN,k,j,i) - 0.5*rho*(SQR(vx) + SQR(vy) + SQR(vz)));
+          // Not rotating grid for the whole sim domain because some points fall out of the boundary
+          // after rotation
+          if (R > 0.5 && R < 3 && abs(z) < 0.5 ){
+            disk_rotate(x,y,z,&xr,&yr,&zr);
+            disk_rotate(vx,vy,vz,&vxr,&vyr,&vzr);
+            // X
+            for (int tmp=is;tmp<=ie;tmp++){
+              if (xr < pcoord->x1v(tmp)) {break;}
+              ir = tmp;
+            }
+            // Y
+            for (int tmp=js;tmp<=je;tmp++){
+              if (yr < pcoord->x2v(tmp)) {break;}
+              jr = tmp;
+            }
+            // Z
+            for (int tmp=ks;tmp<=ke;tmp++){
+              if (zr < pcoord->x3v(tmp)) {break;}
+              kr = tmp;
+            }
+            // printf("The old and new indices are: (%d,%d,%d) -> (%d,%d,%d) \n",i,j,k,ir,jr,kr);
+          // Now replace with rotated values
+          Rho_Disk(kr,jr,ir) = rho;
+          Press_Disk(kr,jr,ir) = press;
+          Velx_Disk(kr,jr,ir) = vxr;
+          Vely_Disk(kr,jr,ir) = vyr;
+          Velz_Disk(kr,jr,ir) = vzr;
+          }
         }
       }
     }
-  }
-  // Finally copy values into the hydro arrays
-  for (k=ks; k<=ke+1; k++){
-    for (j=js; j<=je+1; j++){
-      for (i=is; i<=ie+1; i++){
+    // Finally copy values into the hydro arrays
+    for (k=ks; k<=ke; k++){
+      for (j=js; j<=je; j++){
+        for (i=is; i<=ie; i++){
 
-          phydro->u(IDN,k,j,i) = Rho_Disk(k,j,i);
-          phydro->u(IM1,k,j,i) = Rho_Disk(k,j,i)*Velx_Disk(k,j,i);
-          phydro->u(IM2,k,j,i) = Rho_Disk(k,j,i)*Vely_Disk(k,j,i);
-          phydro->u(IM3,k,j,i) = Rho_Disk(k,j,i)*Velz_Disk(k,j,i);;
-          phydro->u(IEN,k,j,i) = (0.5 * Rho_Disk(k,j,i)) * std::sqrt(
-                                 SQR(Velx_Disk(k,j,i)) + SQR(Vely_Disk(k,j,i)) + SQR(Velz_Disk(k,j,i))) 
-                                 + Press_Disk(k,j,i)/(gas_gamma - 1);
+            phydro->u(IDN,k,j,i) = Rho_Disk(k,j,i);
+            phydro->u(IM1,k,j,i) = Rho_Disk(k,j,i)*Velx_Disk(k,j,i);
+            phydro->u(IM2,k,j,i) = Rho_Disk(k,j,i)*Vely_Disk(k,j,i);
+            phydro->u(IM3,k,j,i) = Rho_Disk(k,j,i)*Velz_Disk(k,j,i);;
+            phydro->u(IEN,k,j,i) = (0.5 * Rho_Disk(k,j,i)) * std::sqrt(
+                                  SQR(Velx_Disk(k,j,i)) + SQR(Vely_Disk(k,j,i)) + SQR(Velz_Disk(k,j,i))) 
+                                  + Press_Disk(k,j,i)/(gas_gamma - 1);
 
+        }
       }
     }
+    // ijk loop ends
   }
-
+  // rotate if statement ends
   Rho_Disk.DeleteAthenaArray();
   Press_Disk.DeleteAthenaArray();
   Velx_Disk.DeleteAthenaArray();
